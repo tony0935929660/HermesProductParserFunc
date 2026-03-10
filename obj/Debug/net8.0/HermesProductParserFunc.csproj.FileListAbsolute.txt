@@ -117,3 +117,4 @@ C:\Users\TSAN-FENG\Desktop\HermesProductParserFunc\bin\output\selenium-manager\w
 C:\Users\TSAN-FENG\Desktop\HermesProductParserFunc\bin\output\Newtonsoft.Json.dll
 C:\Users\TSAN-FENG\Desktop\HermesProductParserFunc\bin\output\WebDriver.Support.dll
 C:\Users\TSAN-FENG\Desktop\HermesProductParserFunc\bin\output\WebDriver.dll
+C:\Users\TSAN-FENG\Desktop\HermesProductParserFunc\obj\Debug\net8.0\HermesProductParserFunc.sourcelink.json
