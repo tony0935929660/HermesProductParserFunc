@@ -1,0 +1,21 @@
+# Azurite (Azure Storage Emulator) files
+AzuriteConfig
+__azurite_db_*.json
+__blobstorage__/
+__queuestorage__/
+__tablestorage__/
+
+# Build outputs
+bin/
+obj/
+
+# IDEs
+.vs/
+.vscode/
+*.user
+*.userprefs
+*.sln.iml
+
+# OS
+.DS_Store
+Thumbs.db
