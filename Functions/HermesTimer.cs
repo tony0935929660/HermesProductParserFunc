@@ -34,6 +34,18 @@ namespace HermesProductParserFunc.Functions
         [Function("HermesTimer")]
         public async Task Run([TimerTrigger("0 */1 * * * *")] TimerInfo timerInfo)
         {
+            IProductRepository repo;
+            if (Environment.GetEnvironmentVariable("USE_AZURE_SQL") == "1")
+                repo = new AzureSqlProductRepository(Environment.GetEnvironmentVariable("AZURE_SQL_CONN"));
+            else
+                repo = new SqliteProductRepository();
+
+            bool needInitDb = Environment.GetEnvironmentVariable("INIT_DB") == "1";
+            if (needInitDb)
+            {
+                repo.InitDb();
+            }
+
             _logger.LogInformation($"HermesTimer executed at: {DateTime.UtcNow:O}");
 
             var url = "https://www.hermes.com/tw/zh/category/leather-goods/bags-and-clutches/#|";
