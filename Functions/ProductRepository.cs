@@ -193,7 +193,7 @@ namespace HermesProductParserFunc.Functions
             cmd.CommandText = @"
                 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Product' AND xtype='U')
                 CREATE TABLE Product (
-                    Id INT IDENTITY(1,1) PRIMARY KEY,
+                    Id NVARCHAR(255) NOT NULL PRIMARY KEY,
                     Title NVARCHAR(255) NOT NULL,
                     Price NVARCHAR(255) NOT NULL,
                     ImageUrl NVARCHAR(1024),
@@ -229,11 +229,12 @@ namespace HermesProductParserFunc.Functions
             using var tran = conn.BeginTransaction();
             var cmd = conn.CreateCommand();
             cmd.Transaction = tran;
-            cmd.CommandText = @"IF NOT EXISTS (SELECT 1 FROM Product WHERE Title = @title AND Price = @price AND Color = @color)
-                INSERT INTO Product (Title, Price, ImageUrl, Color) VALUES (@title, @price, @img, @color)";
+            cmd.CommandText = @"IF NOT EXISTS (SELECT 1 FROM Product WHERE Id = @id)
+                INSERT INTO Product (Id, Title, Price, ImageUrl, Color) VALUES (@id, @title, @price, @img, @color)";
             foreach (var p in products)
             {
                 cmd.Parameters.Clear();
+                cmd.Parameters.AddWithValue("@id", p.Id ?? string.Empty);
                 cmd.Parameters.AddWithValue("@title", p.Title);
                 cmd.Parameters.AddWithValue("@price", p.Price);
                 cmd.Parameters.AddWithValue("@img", p.ImageUrl ?? "");
@@ -249,8 +250,9 @@ namespace HermesProductParserFunc.Functions
             conn.Open();
             var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                IF NOT EXISTS (SELECT 1 FROM Product WHERE Title = @title AND Price = @price AND Color = @color)
-                INSERT INTO Product (Title, Price, ImageUrl, Color) VALUES (@title, @price, @img, @color)";
+                IF NOT EXISTS (SELECT 1 FROM Product WHERE Id = @id)
+                INSERT INTO Product (Id, Title, Price, ImageUrl, Color) VALUES (@id, @title, @price, @img, @color)";
+            cmd.Parameters.AddWithValue("@id", p.Id ?? string.Empty);
             cmd.Parameters.AddWithValue("@title", p.Title);
             cmd.Parameters.AddWithValue("@price", p.Price);
             cmd.Parameters.AddWithValue("@img", p.ImageUrl ?? "");
@@ -263,16 +265,17 @@ namespace HermesProductParserFunc.Functions
             using var conn = new Microsoft.Data.SqlClient.SqlConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT Title, Price, ImageUrl, Color FROM Product";
+            cmd.CommandText = "SELECT Id, Title, Price, ImageUrl, Color FROM Product";
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
                 list.Add(new Product
                 {
-                    Title = reader.GetString(0),
-                    Price = reader.GetString(1),
-                    ImageUrl = reader.IsDBNull(2) ? null : reader.GetString(2),
-                    Color = reader.IsDBNull(3) ? null : reader.GetString(3)
+                    Id = reader.GetString(0),
+                    Title = reader.GetString(1),
+                    Price = reader.GetString(2),
+                    ImageUrl = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    Color = reader.IsDBNull(4) ? null : reader.GetString(4)
                 });
             }
             return list;

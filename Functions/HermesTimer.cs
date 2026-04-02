@@ -81,7 +81,7 @@ namespace HermesProductParserFunc.Functions
 
                 driver.Navigate().GoToUrl(url);
 
-                var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(120)); // timeout 拉長
+                var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(30)); // timeout 拉長
 
                 // 1. 等待 document.readyState 完成
                 wait.Until(d => ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState").ToString() == "complete");
