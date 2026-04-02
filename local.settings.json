@@ -4,8 +4,9 @@
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
     "LINE_BOT_CHANNEL_ACCESS_TOKEN": "sz0kDnn0teCkV8OQS40twOdaSsKiN7pKk5TL4s0krxjudoJ0Yi0oMtNPvadptid8/KjymiaVzI+nr0T9h5A08oQ2xiQyPT0+oF8i874VsQBIm6TA1lqE+Qv6SFgCVdRmR/BE9VIvTWC4HaugwGLuqgdB04t89/1O/w1cDnyilFU=",
-    "USE_AZURE_SQL": 0,
-    "AZURE_SQL_CONN": null,
-    "INIT_DB": 0
+    "USE_AZURE_SQL": "0",
+    "AZURE_SQL_CONN": "",
+    "INIT_DB": "0",
+    "SQLITE_DB_PATH": "C:\\Users\\TSAN-FENG\\Desktop\\HermesProductParserFunc\\data\\hermes.db"
   }
 }

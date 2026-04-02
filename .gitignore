@@ -8,6 +8,7 @@ __tablestorage__/
 # Build outputs
 bin/
 obj/
+data/
 
 # IDEs
 .vs/

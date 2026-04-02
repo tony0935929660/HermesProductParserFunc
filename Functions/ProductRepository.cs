@@ -1,59 +1,160 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Microsoft.Data.Sqlite;
-using System.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 
 namespace HermesProductParserFunc.Functions
 {
     public interface IProductRepository
     {
         void InitDb();
-        bool ProductExists(string title, string price);
+        bool ProductExists(string title, string price, string color);
         void InsertProduct(Product p);
         List<Product> GetAllProducts();
+        void ClearAllProducts();
+        void InsertAllProducts(List<Product> products);
     }
 
     // SQLite 實作
     public class SqliteProductRepository : IProductRepository
     {
-        private readonly string _connStr = "Data Source=hermes.db";
+        private readonly string _dbPath;
+        private readonly string _connStr;
+
+        public SqliteProductRepository()
+        {
+            _dbPath = ResolveDbPath();
+            var dbDirectory = Path.GetDirectoryName(_dbPath);
+            if (!string.IsNullOrEmpty(dbDirectory))
+            {
+                Directory.CreateDirectory(dbDirectory);
+            }
+
+            _connStr = new SqliteConnectionStringBuilder
+            {
+                DataSource = _dbPath
+            }.ToString();
+        }
+
+        private static string ResolveDbPath()
+        {
+            var appRoot = ResolveAppRoot();
+            var configuredPath = Environment.GetEnvironmentVariable("SQLITE_DB_PATH");
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+            {
+                if (Path.IsPathRooted(configuredPath))
+                {
+                    return Path.GetFullPath(configuredPath);
+                }
+
+                return Path.GetFullPath(Path.Combine(appRoot, configuredPath));
+            }
+
+            return Path.Combine(appRoot, "data", "hermes.db");
+        }
+
+        private static string ResolveAppRoot()
+        {
+            var scriptRoot = Environment.GetEnvironmentVariable("AzureWebJobsScriptRoot");
+            if (!string.IsNullOrWhiteSpace(scriptRoot))
+            {
+                return Path.GetFullPath(scriptRoot);
+            }
+
+            var current = new DirectoryInfo(Directory.GetCurrentDirectory());
+            while (current != null)
+            {
+                if (Directory.GetFiles(current.FullName, "*.csproj").Length > 0)
+                {
+                    return current.FullName;
+                }
+
+                current = current.Parent;
+            }
+
+            current = new DirectoryInfo(AppContext.BaseDirectory);
+            while (current != null)
+            {
+                if (Directory.GetFiles(current.FullName, "*.csproj").Length > 0)
+                {
+                    return current.FullName;
+                }
+
+                current = current.Parent;
+            }
+
+            return Directory.GetCurrentDirectory();
+        }
+
         public void InitDb()
         {
-            Console.WriteLine("InitDb called, db path: " + System.IO.Path.GetFullPath("hermes.db"));
+            Console.WriteLine("InitDb called, db path: " + _dbPath);
             
             using var conn = new SqliteConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 CREATE TABLE IF NOT EXISTS Product (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Id TEXT PRIMARY KEY,
                     Title TEXT NOT NULL,
                     Price TEXT NOT NULL,
                     ImageUrl TEXT,
-                    UNIQUE(Title, Price)
+                    Color TEXT,
+                    UNIQUE(Title, Price, Color)
                 );
             ";
             cmd.ExecuteNonQuery();
         }
-        public bool ProductExists(string title, string price)
+        public void ClearAllProducts()
         {
             using var conn = new SqliteConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM Product WHERE Title = $title AND Price = $price";
+            cmd.CommandText = "DELETE FROM Product";
+            cmd.ExecuteNonQuery();
+        }
+        public bool ProductExists(string title, string price, string color)
+        {
+            using var conn = new SqliteConnection(_connStr);
+            conn.Open();
+            var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Product WHERE Title = $title AND Price = $price AND Color = $color";
             cmd.Parameters.AddWithValue("$title", title);
             cmd.Parameters.AddWithValue("$price", price);
+            cmd.Parameters.AddWithValue("$color", color ?? "");
             return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
         }
+        public void InsertAllProducts(List<Product> products)
+        {
+            using var conn = new SqliteConnection(_connStr);
+            conn.Open();
+            using var tran = conn.BeginTransaction();
+            var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT OR IGNORE INTO Product (Id, Title, Price, ImageUrl, Color) VALUES ($id, $title, $price, $img, $color)";
+            foreach (var p in products)
+            {
+                cmd.Parameters.Clear();
+                cmd.Parameters.AddWithValue("$id", p.Id);
+                cmd.Parameters.AddWithValue("$title", p.Title);
+                cmd.Parameters.AddWithValue("$price", p.Price);
+                cmd.Parameters.AddWithValue("$img", p.ImageUrl ?? "");
+                cmd.Parameters.AddWithValue("$color", p.Color ?? "");
+                cmd.ExecuteNonQuery();
+            }
+            tran.Commit();
+        }
+
         public void InsertProduct(Product p)
         {
             using var conn = new SqliteConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
-            cmd.CommandText = "INSERT OR IGNORE INTO Product (Title, Price, ImageUrl) VALUES ($title, $price, $img)";
+            cmd.CommandText = "INSERT OR IGNORE INTO Product (Title, Price, ImageUrl, Color) VALUES ($title, $price, $img, $color)";
             cmd.Parameters.AddWithValue("$title", p.Title);
             cmd.Parameters.AddWithValue("$price", p.Price);
             cmd.Parameters.AddWithValue("$img", p.ImageUrl ?? "");
+            cmd.Parameters.AddWithValue("$color", p.Color ?? "");
             cmd.ExecuteNonQuery();
         }
         public List<Product> GetAllProducts()
@@ -62,15 +163,17 @@ namespace HermesProductParserFunc.Functions
             using var conn = new SqliteConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT Title, Price, ImageUrl FROM Product";
+            cmd.CommandText = "SELECT Id, Title, Price, ImageUrl, Color FROM Product";
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
                 list.Add(new Product
                 {
-                    Title = reader.GetString(0),
-                    Price = reader.GetString(1),
-                    ImageUrl = reader.IsDBNull(2) ? null : reader.GetString(2)
+                    Id = reader.GetString(0).ToString(),
+                    Title = reader.GetString(1),
+                    Price = reader.GetString(2),
+                    ImageUrl = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    Color = reader.IsDBNull(4) ? null : reader.GetString(4)
                 });
             }
             return list;
@@ -84,7 +187,7 @@ namespace HermesProductParserFunc.Functions
         public AzureSqlProductRepository(string connStr) { _connStr = connStr; }
         public void InitDb()
         {
-            using var conn = new SqlConnection(_connStr);
+            using var conn = new Microsoft.Data.SqlClient.SqlConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
             cmd.CommandText = @"
@@ -94,41 +197,73 @@ namespace HermesProductParserFunc.Functions
                     Title NVARCHAR(255) NOT NULL,
                     Price NVARCHAR(255) NOT NULL,
                     ImageUrl NVARCHAR(1024),
-                    CONSTRAINT UQ_TitlePrice UNIQUE (Title, Price)
+                    Color NVARCHAR(255),
+                    CONSTRAINT UQ_TitlePriceColor UNIQUE (Title, Price, Color)
                 );
             ";
             cmd.ExecuteNonQuery();
         }
-        public bool ProductExists(string title, string price)
+        public void ClearAllProducts()
         {
-            using var conn = new SqlConnection(_connStr);
+            using var conn = new Microsoft.Data.SqlClient.SqlConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM Product WHERE Title = @title AND Price = @price";
+            cmd.CommandText = "DELETE FROM Product";
+            cmd.ExecuteNonQuery();
+        }
+        public bool ProductExists(string title, string price, string color)
+        {
+            using var conn = new Microsoft.Data.SqlClient.SqlConnection(_connStr);
+            conn.Open();
+            var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Product WHERE Title = @title AND Price = @price AND Color = @color";
             cmd.Parameters.AddWithValue("@title", title);
             cmd.Parameters.AddWithValue("@price", price);
+            cmd.Parameters.AddWithValue("@color", color ?? "");
             return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
         }
+        public void InsertAllProducts(List<Product> products)
+        {
+            using var conn = new Microsoft.Data.SqlClient.SqlConnection(_connStr);
+            conn.Open();
+            using var tran = conn.BeginTransaction();
+            var cmd = conn.CreateCommand();
+            cmd.Transaction = tran;
+            cmd.CommandText = @"IF NOT EXISTS (SELECT 1 FROM Product WHERE Title = @title AND Price = @price AND Color = @color)
+                INSERT INTO Product (Title, Price, ImageUrl, Color) VALUES (@title, @price, @img, @color)";
+            foreach (var p in products)
+            {
+                cmd.Parameters.Clear();
+                cmd.Parameters.AddWithValue("@title", p.Title);
+                cmd.Parameters.AddWithValue("@price", p.Price);
+                cmd.Parameters.AddWithValue("@img", p.ImageUrl ?? "");
+                cmd.Parameters.AddWithValue("@color", p.Color ?? "");
+                cmd.ExecuteNonQuery();
+            }
+            tran.Commit();
+        }
+
         public void InsertProduct(Product p)
         {
-            using var conn = new SqlConnection(_connStr);
+            using var conn = new Microsoft.Data.SqlClient.SqlConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                IF NOT EXISTS (SELECT 1 FROM Product WHERE Title = @title AND Price = @price)
-                INSERT INTO Product (Title, Price, ImageUrl) VALUES (@title, @price, @img)";
+                IF NOT EXISTS (SELECT 1 FROM Product WHERE Title = @title AND Price = @price AND Color = @color)
+                INSERT INTO Product (Title, Price, ImageUrl, Color) VALUES (@title, @price, @img, @color)";
             cmd.Parameters.AddWithValue("@title", p.Title);
             cmd.Parameters.AddWithValue("@price", p.Price);
             cmd.Parameters.AddWithValue("@img", p.ImageUrl ?? "");
+            cmd.Parameters.AddWithValue("@color", p.Color ?? "");
             cmd.ExecuteNonQuery();
         }
         public List<Product> GetAllProducts()
         {
             var list = new List<Product>();
-            using var conn = new SqlConnection(_connStr);
+            using var conn = new Microsoft.Data.SqlClient.SqlConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT Title, Price, ImageUrl FROM Product";
+            cmd.CommandText = "SELECT Title, Price, ImageUrl, Color FROM Product";
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -136,7 +271,8 @@ namespace HermesProductParserFunc.Functions
                 {
                     Title = reader.GetString(0),
                     Price = reader.GetString(1),
-                    ImageUrl = reader.IsDBNull(2) ? null : reader.GetString(2)
+                    ImageUrl = reader.IsDBNull(2) ? null : reader.GetString(2),
+                    Color = reader.IsDBNull(3) ? null : reader.GetString(3)
                 });
             }
             return list;
