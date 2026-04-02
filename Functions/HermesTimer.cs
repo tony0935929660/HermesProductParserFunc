@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -37,10 +38,13 @@ namespace HermesProductParserFunc.Functions
         public async Task Run([TimerTrigger("0 */1 * * * *")] TimerInfo timerInfo)
         {
             IProductRepository repo;
-            if (Environment.GetEnvironmentVariable("USE_AZURE_SQL") == "1")
+            var useAzureSql = Environment.GetEnvironmentVariable("USE_AZURE_SQL") == "1";
+            if (useAzureSql)
                 repo = new AzureSqlProductRepository(Environment.GetEnvironmentVariable("AZURE_SQL_CONN"));
             else
                 repo = new SqliteProductRepository();
+
+            _logger.LogInformation("Repository mode: {repositoryMode}", useAzureSql ? "AzureSql" : "Sqlite");
 
             bool needInitDb = Environment.GetEnvironmentVariable("INIT_DB") == "1";
             if (needInitDb)
@@ -66,6 +70,7 @@ namespace HermesProductParserFunc.Functions
             options.AddArgument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.66 Safari/537.36");
 
             var chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+            var chromePathExists = System.IO.File.Exists(chromePath);
             if (System.IO.File.Exists(chromePath))
             {
                 options.BinaryLocation = chromePath;
@@ -77,7 +82,27 @@ namespace HermesProductParserFunc.Functions
 
             try
             {
-                using var driver = new ChromeDriver(service, options, TimeSpan.FromSeconds(60));
+                _logger.LogInformation("Chrome runtime info: OS={os}, Arch={arch}, BaseDir={baseDir}, CurrentDir={currentDir}, ChromePathExists={chromePathExists}, ChromeBinary={chromeBinary}",
+                    RuntimeInformation.OSDescription,
+                    RuntimeInformation.OSArchitecture,
+                    AppContext.BaseDirectory,
+                    Environment.CurrentDirectory,
+                    chromePathExists,
+                    string.IsNullOrWhiteSpace(options.BinaryLocation) ? "<default>" : options.BinaryLocation);
+
+                ChromeDriver driver;
+                try
+                {
+                    driver = new ChromeDriver(service, options, TimeSpan.FromSeconds(60));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "ChromeDriver 初始化失敗");
+                    throw;
+                }
+
+                using (driver)
+                {
 
                 driver.Navigate().GoToUrl(url);
 
@@ -304,6 +329,7 @@ namespace HermesProductParserFunc.Functions
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "爬取商品列表失敗");
+                }
                 }
             }
             catch (Exception ex)
