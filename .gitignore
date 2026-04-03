@@ -10,6 +10,9 @@ bin/
 obj/
 data/
 
+# Local Azure Functions settings
+local.settings.json
+
 # IDEs
 .vs/
 .vscode/
