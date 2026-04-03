@@ -39,52 +39,8 @@ namespace HermesProductParserFunc.Functions
 
         private static string ResolveDbPath()
         {
-            var appRoot = ResolveAppRoot();
             var configuredPath = Environment.GetEnvironmentVariable("SQLITE_DB_PATH");
-            if (!string.IsNullOrWhiteSpace(configuredPath))
-            {
-                if (Path.IsPathRooted(configuredPath))
-                {
-                    return Path.GetFullPath(configuredPath);
-                }
-
-                return Path.GetFullPath(Path.Combine(appRoot, configuredPath));
-            }
-
-            return Path.Combine(appRoot, "data", "hermes.db");
-        }
-
-        private static string ResolveAppRoot()
-        {
-            var scriptRoot = Environment.GetEnvironmentVariable("AzureWebJobsScriptRoot");
-            if (!string.IsNullOrWhiteSpace(scriptRoot))
-            {
-                return Path.GetFullPath(scriptRoot);
-            }
-
-            var current = new DirectoryInfo(Directory.GetCurrentDirectory());
-            while (current != null)
-            {
-                if (Directory.GetFiles(current.FullName, "*.csproj").Length > 0)
-                {
-                    return current.FullName;
-                }
-
-                current = current.Parent;
-            }
-
-            current = new DirectoryInfo(AppContext.BaseDirectory);
-            while (current != null)
-            {
-                if (Directory.GetFiles(current.FullName, "*.csproj").Length > 0)
-                {
-                    return current.FullName;
-                }
-
-                current = current.Parent;
-            }
-
-            return Directory.GetCurrentDirectory();
+            return AppPathResolver.ResolvePath(configuredPath, "data", "hermes.db");
         }
 
         public void InitDb()

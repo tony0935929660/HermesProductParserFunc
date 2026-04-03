@@ -34,3 +34,10 @@
   - `HermesTimer executed at: ...`
   - `抓取到數字：10`
   - 或 `抓取失敗` 含 exception
+
+## 執行結果檔案
+- 每次 Timer 執行都會額外寫入 JSONL 檔案，預設位置是 `data/scrape-runs/hermes-scrape-YYYYMMDD.jsonl`。
+- 若該次執行發生失敗或頁面狀態異常，會額外寫出 HTML snapshot 到 `data/scrape-runs/snapshots/`，方便後續比對實際頁面內容。
+- 可用環境變數覆寫：
+   - `SCRAPE_RUN_LOG_DIR`：指定結果檔案資料夾。
+   - `SCRAPE_RUN_LOG_PATH`：直接指定結果檔案完整路徑。
