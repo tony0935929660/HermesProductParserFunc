@@ -5,13 +5,13 @@ COPY ["HermesProductParserFunc.csproj", "./"]
 RUN dotnet restore "HermesProductParserFunc.csproj"
 
 COPY . .
-RUN dotnet publish "HermesProductParserFunc.csproj" -c Release -o /home/site/wwwroot
+RUN dotnet publish "HermesProductParserFunc.csproj" -c Release -o /app/publish
 
-FROM mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
 
-ENV AzureWebJobsScriptRoot=/home/site/wwwroot \
-    AzureFunctionsJobHost__Logging__Console__IsEnabled=true \
-    FUNCTIONS_WORKER_RUNTIME=dotnet-isolated \
+WORKDIR /app
+
+ENV DOTNET_ENVIRONMENT=Production \
     CHROME_BIN=/usr/bin/google-chrome \
     SCRAPE_RUN_LOG_DIR=/home/data/scrape-runs
 
@@ -25,6 +25,6 @@ RUN apt-get update \
     && chmod -R 777 /home/data /tmp/.cache \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /home/site/wwwroot /home/site/wwwroot
+COPY --from=build /app/publish ./
 
-EXPOSE 80
+ENTRYPOINT ["dotnet", "HermesProductParserFunc.dll"]

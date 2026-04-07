@@ -8,8 +8,8 @@ using System.Net.Http.Json;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
@@ -26,17 +26,16 @@ namespace HermesProductParserFunc.Functions
         public string Color { get; set; }
     }
 
-    public class HermesTimer
+    public class HermesScraper
     {
-        private readonly ILogger _logger;
+        private readonly ILogger<HermesScraper> _logger;
 
-        public HermesTimer(ILoggerFactory loggerFactory)
+        public HermesScraper(ILogger<HermesScraper> logger)
         {
-            _logger = loggerFactory.CreateLogger<HermesTimer>();
+            _logger = logger;
         }
 
-        [Function("HermesTimer")]
-        public async Task Run([TimerTrigger("0 */1 * * * *")] TimerInfo timerInfo)
+        public async Task RunAsync(CancellationToken cancellationToken)
         {
             IProductRepository repo;
             var useAzureSql = Environment.GetEnvironmentVariable("USE_AZURE_SQL") == "1";
@@ -68,7 +67,7 @@ namespace HermesProductParserFunc.Functions
                     repo.InitDb();
                 }
 
-                _logger.LogInformation($"HermesTimer executed at: {runStartedAtUtc:O}");
+                _logger.LogInformation("Hermes worker cycle started at: {runStartedAtUtc}", runStartedAtUtc);
 
                 var options = new ChromeOptions();
                 options.AddArgument("--headless=new");
@@ -236,7 +235,7 @@ namespace HermesProductParserFunc.Functions
                                     if (!string.IsNullOrEmpty(title) && !string.IsNullOrEmpty(price))
                                         break;
 
-                                    System.Threading.Thread.Sleep(500);
+                                    await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
                                 }
 
                                 try

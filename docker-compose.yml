@@ -7,18 +7,12 @@ services:
     image: hermes-product-parser:latest
     restart: unless-stopped
     environment:
-      AzureWebJobsStorage: ${AzureWebJobsStorage}
-      FUNCTIONS_WORKER_RUNTIME: dotnet-isolated
       USE_AZURE_SQL: ${USE_AZURE_SQL:-1}
       AZURE_SQL_CONN: ${AZURE_SQL_CONN:-}
       INIT_DB: ${INIT_DB:-0}
       LINE_BOT_CHANNEL_ACCESS_TOKEN: ${LINE_BOT_CHANNEL_ACCESS_TOKEN:-}
+      SCRAPE_INTERVAL_SECONDS: ${SCRAPE_INTERVAL_SECONDS:-60}
       SCRAPE_RUN_LOG_DIR: /home/data/scrape-runs
       SQLITE_DB_PATH: ${SQLITE_DB_PATH:-/home/data/hermes.db}
     volumes:
       - /opt/hermes/data:/home/data
-
-    # TimerTrigger does not need a public port by default.
-    # Uncomment if you want local-only access from the VM.
-    # ports:
-    #   - "127.0.0.1:8080:80"
