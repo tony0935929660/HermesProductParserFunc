@@ -28,6 +28,9 @@ namespace HermesProductParserFunc.Functions
 
     public class HermesScraper
     {
+        private const string HermesUrl = "https://www.hermes.com/tw/zh/category/leather-goods/bags-and-clutches/#|";
+        private const string DefaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
+
         private readonly ILogger<HermesScraper> _logger;
 
         public HermesScraper(ILogger<HermesScraper> logger)
@@ -52,7 +55,7 @@ namespace HermesProductParserFunc.Functions
                 RunId = Guid.NewGuid().ToString("n"),
                 StartedAtUtc = runStartedAtUtc,
                 RepositoryMode = repositoryMode,
-                Url = "https://www.hermes.com/tw/zh/category/leather-goods/bags-and-clutches/#|"
+                Url = HermesUrl
             };
             var runFileLogger = new ScrapeRunFileLogger();
             string htmlSnapshot = null;
@@ -78,9 +81,12 @@ namespace HermesProductParserFunc.Functions
                 options.AddArgument("--disable-software-rasterizer");
                 options.AddArgument("--remote-debugging-port=9222");
                 options.AddArgument("--disable-setuid-sandbox");
-                options.AddArgument("--enable-automation");
                 options.AddArgument("--window-size=1920,1080");
-                options.AddArgument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.66 Safari/537.36");
+                options.AddArgument("--lang=zh-TW");
+                options.AddArgument("--disable-blink-features=AutomationControlled");
+                options.AddArgument($"--user-agent={DefaultUserAgent}");
+                options.AddExcludedArgument("enable-automation");
+                options.AddAdditionalOption("useAutomationExtension", false);
 
                 var chromePath = ResolveChromeBinaryPath();
                 var chromePathExists = !string.IsNullOrWhiteSpace(chromePath) && System.IO.File.Exists(chromePath);
@@ -115,24 +121,37 @@ namespace HermesProductParserFunc.Functions
 
                 using (driver)
                 {
+                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(60);
+                    driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(30);
+
+                    TryApplyStealthSettings(driver);
                     driver.Navigate().GoToUrl(runRecord.Url);
 
                     var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(30));
 
                     wait.Until(d => ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState").ToString() == "complete");
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                    TryAcceptConsent(driver);
+                    var pageSignal = WaitForPageSignal(driver, TimeSpan.FromSeconds(30));
 
                     runRecord.CurrentPageUrl = driver.Url;
-                    _logger.LogInformation($"[DEBUG] After readyState, driver.Url: {driver.Url}");
+                    _logger.LogInformation("[DEBUG] After readyState, driver.Url: {url}, signal: {signal}, title: {title}", driver.Url, pageSignal, driver.Title);
                     var ps1 = SafeGetPageSource(driver);
                     if (!string.IsNullOrEmpty(ps1))
                     {
                         _logger.LogInformation($"[DEBUG] PageSource前2000字: {ps1.Substring(0, Math.Min(2000, ps1.Length))}");
                     }
 
+                    var bodyText = SafeGetVisibleBodyText(driver);
+                    if (!string.IsNullOrWhiteSpace(bodyText))
+                    {
+                        _logger.LogInformation("[DEBUG] BodyText前1000字: {bodyText}", bodyText.Substring(0, Math.Min(1000, bodyText.Length)));
+                    }
+
                     int expectedCount = 0;
                     try
                     {
-                        var headerElem = wait.Until(drv => drv.FindElement(By.CssSelector(".header-title-current-number-result")));
+                        var headerElem = wait.Until(drv => drv.FindElements(By.CssSelector(".header-title-current-number-result")).FirstOrDefault(elem => elem.Displayed));
                         var numText = headerElem?.Text?.Trim();
                         var match = Regex.Match(numText ?? string.Empty, @"\d+");
                         if (match.Success)
@@ -147,11 +166,14 @@ namespace HermesProductParserFunc.Functions
                     runRecord.ExpectedCount = expectedCount;
                     if (expectedCount == 0)
                     {
+                        var blockReason = DetectBlockReason(driver, ps1, bodyText);
                         runRecord.Outcome = "UnexpectedPageState";
-                        runRecord.Message = "預期商品數量為 0，可能無法正確爬取";
+                        runRecord.Message = string.IsNullOrWhiteSpace(blockReason)
+                            ? "預期商品數量為 0，可能無法正確爬取"
+                            : $"預期商品數量為 0，可能遭遇阻擋或頁面異常: {blockReason}";
                         runRecord.CurrentPageUrl = driver.Url;
                         htmlSnapshot = SafeGetPageSource(driver);
-                        _logger.LogWarning("[DEBUG] 預期商品數量為 0，可能無法正確爬取");
+                        _logger.LogWarning("[DEBUG] 預期商品數量為 0，可能無法正確爬取。判斷: {blockReason}", blockReason ?? "unknown");
                         return;
                     }
 
@@ -456,6 +478,147 @@ namespace HermesProductParserFunc.Functions
             };
 
             return candidatePaths.FirstOrDefault(System.IO.File.Exists);
+        }
+
+        private static void TryApplyStealthSettings(ChromeDriver driver)
+        {
+            try
+            {
+                driver.ExecuteCdpCommand("Network.enable", new Dictionary<string, object>());
+                driver.ExecuteCdpCommand("Network.setUserAgentOverride", new Dictionary<string, object>
+                {
+                    ["userAgent"] = DefaultUserAgent,
+                    ["acceptLanguage"] = "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+                    ["platform"] = "Linux x86_64"
+                });
+
+                driver.ExecuteCdpCommand("Page.addScriptToEvaluateOnNewDocument", new Dictionary<string, object>
+                {
+                    ["source"] = @"
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+Object.defineProperty(navigator, 'languages', { get: () => ['zh-TW', 'zh', 'en-US', 'en'] });
+Object.defineProperty(navigator, 'platform', { get: () => 'Linux x86_64' });
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+window.chrome = { runtime: {} };
+"
+                });
+            }
+            catch
+            {
+            }
+        }
+
+        private void TryAcceptConsent(IWebDriver driver)
+        {
+            var selectors = new[]
+            {
+                "#onetrust-accept-btn-handler",
+                "button[data-testid='uc-accept-all-button']",
+                "button[id*='accept']",
+                "button[aria-label*='Accept']",
+                "button[title*='Accept']"
+            };
+
+            foreach (var selector in selectors)
+            {
+                try
+                {
+                    var button = driver.FindElements(By.CssSelector(selector)).FirstOrDefault(element => element.Displayed && element.Enabled);
+                    if (button == null)
+                    {
+                        continue;
+                    }
+
+                    ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", button);
+                    _logger.LogInformation("[DEBUG] Clicked consent button: {selector}", selector);
+                    return;
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static string WaitForPageSignal(IWebDriver driver, TimeSpan timeout)
+        {
+            var wait = new WebDriverWait(driver, timeout);
+            return wait.Until(drv =>
+            {
+                if (drv.FindElements(By.CssSelector(".header-title-current-number-result")).Any())
+                {
+                    return "header-count";
+                }
+
+                if (drv.FindElements(By.CssSelector(".product-item")).Any())
+                {
+                    return "product-items";
+                }
+
+                var title = drv.Title ?? string.Empty;
+                var pageSource = SafeGetPageSource(drv) ?? string.Empty;
+                if (ContainsBlockMarkers(title) || ContainsBlockMarkers(pageSource))
+                {
+                    return "blocked";
+                }
+
+                return null;
+            });
+        }
+
+        private static string SafeGetVisibleBodyText(IWebDriver driver)
+        {
+            try
+            {
+                var body = driver.FindElements(By.TagName("body")).FirstOrDefault();
+                return body?.Text;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string DetectBlockReason(IWebDriver driver, string pageSource, string bodyText)
+        {
+            if (ContainsBlockMarkers(driver.Title))
+            {
+                return $"頁面標題疑似阻擋: {driver.Title}";
+            }
+
+            if (ContainsBlockMarkers(bodyText))
+            {
+                return "頁面內容包含 access denied 或 robot 驗證訊息";
+            }
+
+            if (ContainsBlockMarkers(pageSource))
+            {
+                return "HTML 內容包含 access denied 或 robot 驗證訊息";
+            }
+
+            if (driver.FindElements(By.CssSelector("iframe[src*='captcha'], iframe[title*='challenge']")).Any())
+            {
+                return "頁面出現 captcha/challenge iframe";
+            }
+
+            return null;
+        }
+
+        private static bool ContainsBlockMarkers(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var normalized = value.ToLowerInvariant();
+            return normalized.Contains("access denied")
+                || normalized.Contains("forbidden")
+                || normalized.Contains("verify you are human")
+                || normalized.Contains("captcha")
+                || normalized.Contains("robot")
+                || normalized.Contains("blocked")
+                || normalized.Contains("request unsuccessful")
+                || normalized.Contains("temporary unavailable");
         }
 
         private async Task BroadcastLineMessageAsync(List<Product> products)
