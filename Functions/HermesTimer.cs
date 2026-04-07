@@ -83,8 +83,8 @@ namespace HermesProductParserFunc.Functions
                 options.AddArgument("--window-size=1920,1080");
                 options.AddArgument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.66 Safari/537.36");
 
-                var chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-                var chromePathExists = System.IO.File.Exists(chromePath);
+                var chromePath = ResolveChromeBinaryPath();
+                var chromePathExists = !string.IsNullOrWhiteSpace(chromePath) && System.IO.File.Exists(chromePath);
                 if (chromePathExists)
                 {
                     options.BinaryLocation = chromePath;
@@ -432,6 +432,31 @@ namespace HermesProductParserFunc.Functions
             {
                 return null;
             }
+        }
+
+        private static string ResolveChromeBinaryPath()
+        {
+            var configuredChromePath = Environment.GetEnvironmentVariable("CHROME_BIN");
+            if (string.IsNullOrWhiteSpace(configuredChromePath))
+            {
+                configuredChromePath = Environment.GetEnvironmentVariable("CHROME_PATH");
+            }
+
+            if (!string.IsNullOrWhiteSpace(configuredChromePath) && System.IO.File.Exists(configuredChromePath))
+            {
+                return configuredChromePath;
+            }
+
+            var candidatePaths = new[]
+            {
+                "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                "/usr/bin/google-chrome",
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser"
+            };
+
+            return candidatePaths.FirstOrDefault(System.IO.File.Exists);
         }
 
         private async Task BroadcastLineMessageAsync(List<Product> products)

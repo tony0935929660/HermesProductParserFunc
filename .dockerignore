@@ -1,0 +1,15 @@
+.git
+.gitignore
+.vs
+.vscode
+bin
+obj
+output
+data
+AzuriteConfig
+__azurite_db_*.json
+__blobstorage__
+__queuestorage__
+__tablestorage__
+local.settings.json
+README.md

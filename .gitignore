@@ -12,6 +12,9 @@ data/
 
 # Local Azure Functions settings
 local.settings.json
+.env
+.env.*
+!.env.example
 
 # IDEs
 .vs/
