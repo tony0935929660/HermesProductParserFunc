@@ -37,9 +37,38 @@
 ## 執行結果檔案
 - 每次 Timer 執行都會額外寫入 JSONL 檔案，預設位置是 `data/scrape-runs/hermes-scrape-YYYYMMDD.jsonl`。
 - 若該次執行發生失敗或頁面狀態異常，會額外寫出 HTML snapshot 到 `data/scrape-runs/snapshots/`，方便後續比對實際頁面內容。
+- 若該次執行發生失敗或頁面被 challenge 擋下，會額外寫出 screenshot 到 `data/scrape-runs/screenshots/`。
 - 可用環境變數覆寫：
    - `SCRAPE_RUN_LOG_DIR`：指定結果檔案資料夾。
    - `SCRAPE_RUN_LOG_PATH`：直接指定結果檔案完整路徑。
+
+## 本機用同一個 Docker 測試
+- 若要在本機直接用 Linux 容器跑一輪並自動結束，可用：
+   ```powershell
+   docker build -t hermes-product-parser .
+   docker run --rm --name hermes-product-parser \
+      -v "${PWD}\data:/home/data" \
+      -e USE_AZURE_SQL="0" \
+      -e INIT_DB="0" \
+      -e RUN_ONCE="1" \
+      -e SQLITE_DB_PATH="/home/data/hermes.db" \
+      -e SCRAPE_RUN_LOG_DIR="/home/data/scrape-runs" \
+      -e SCRAPE_INTERVAL_SECONDS="300" \
+      hermes-product-parser
+   ```
+- `RUN_ONCE=1` 會讓 worker 跑完第一輪後自動停止，適合本機驗證。
+- 執行後可直接查看：
+   - `data/scrape-runs/hermes-scrape-YYYYMMDD.jsonl`
+   - `data/scrape-runs/screenshots/`
+   - `data/scrape-runs/snapshots/`
+- 若想改用 `docker compose` 做本機測試，可設定：
+   ```powershell
+   $env:HOST_DATA_DIR = "./data"
+   $env:USE_AZURE_SQL = "0"
+   $env:RUN_ONCE = "1"
+   $env:RESTART_POLICY = "no"
+   docker compose up --build
+   ```
 
 ## Docker 部署
 - 這個專案可用自訂容器部署到 Linux VM。Dockerfile 已包含 .NET 8 runtime、Google Chrome 與 Selenium 執行所需 Linux 相依套件。
@@ -55,6 +84,7 @@
       -e USE_AZURE_SQL="1" \
       -e AZURE_SQL_CONN="<azure-sql-connection-string>" \
       -e INIT_DB="0" \
+      -e RUN_ONCE="0" \
       -e LINE_BOT_CHANNEL_ACCESS_TOKEN="<line-token>" \
       -e SCRAPE_INTERVAL_SECONDS="60" \
       -e SCRAPE_RUN_LOG_DIR="/home/data/scrape-runs" \
@@ -63,3 +93,4 @@
 - 若你只是第一次建表，可暫時把 `INIT_DB` 設成 `1`，建完後改回 `0`。
 - 正式機建議使用 Azure SQL，不要依賴 SQLite。若仍要用 SQLite，至少把 `SQLITE_DB_PATH` 指向 `/home/data/hermes.db` 這類可寫入路徑。
    - 若要調整執行頻率，可透過 `SCRAPE_INTERVAL_SECONDS` 設定秒數，預設為 `60`。
+   - `docker-compose.yml` 現在支援用 `HOST_DATA_DIR` 切換本機與 Linux VM 資料目錄；正式機可設成 `/opt/hermes/data`，本機可用 `./data`。

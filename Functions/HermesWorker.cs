@@ -12,19 +12,23 @@ namespace HermesProductParserFunc.Functions
         private static readonly TimeSpan DefaultInterval = TimeSpan.FromMinutes(1);
 
         private readonly HermesScraper _scraper;
+        private readonly IHostApplicationLifetime _applicationLifetime;
         private readonly ILogger<HermesWorker> _logger;
         private readonly TimeSpan _interval;
+        private readonly bool _runOnce;
 
-        public HermesWorker(HermesScraper scraper, ILogger<HermesWorker> logger)
+        public HermesWorker(HermesScraper scraper, IHostApplicationLifetime applicationLifetime, ILogger<HermesWorker> logger)
         {
             _scraper = scraper;
+            _applicationLifetime = applicationLifetime;
             _logger = logger;
             _interval = ResolveInterval();
+            _runOnce = ResolveRunOnce();
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Hermes worker started. Interval: {intervalSeconds} seconds", _interval.TotalSeconds);
+            _logger.LogInformation("Hermes worker started. Interval: {intervalSeconds} seconds, RunOnce: {runOnce}", _interval.TotalSeconds, _runOnce);
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -39,6 +43,13 @@ namespace HermesProductParserFunc.Functions
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Unhandled error while running Hermes scrape cycle");
+                }
+
+                if (_runOnce)
+                {
+                    _logger.LogInformation("Run-once mode enabled. Stopping host after the first scrape cycle.");
+                    _applicationLifetime.StopApplication();
+                    break;
                 }
 
                 try
@@ -63,6 +74,13 @@ namespace HermesProductParserFunc.Functions
             }
 
             return DefaultInterval;
+        }
+
+        private static bool ResolveRunOnce()
+        {
+            var configuredValue = Environment.GetEnvironmentVariable("RUN_ONCE");
+            return string.Equals(configuredValue, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(configuredValue, "true", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

@@ -5,14 +5,15 @@ services:
       context: .
       dockerfile: Dockerfile
     image: hermes-product-parser:latest
-    restart: unless-stopped
+    restart: ${RESTART_POLICY:-unless-stopped}
     environment:
       USE_AZURE_SQL: ${USE_AZURE_SQL:-1}
       AZURE_SQL_CONN: ${AZURE_SQL_CONN:-}
       INIT_DB: ${INIT_DB:-0}
+      RUN_ONCE: ${RUN_ONCE:-0}
       LINE_BOT_CHANNEL_ACCESS_TOKEN: ${LINE_BOT_CHANNEL_ACCESS_TOKEN:-}
       SCRAPE_INTERVAL_SECONDS: ${SCRAPE_INTERVAL_SECONDS:-60}
       SCRAPE_RUN_LOG_DIR: /home/data/scrape-runs
       SQLITE_DB_PATH: ${SQLITE_DB_PATH:-/home/data/hermes.db}
     volumes:
-      - /opt/hermes/data:/home/data
+      - ${HOST_DATA_DIR:-./data}:/home/data
