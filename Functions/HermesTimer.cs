@@ -27,6 +27,7 @@ namespace HermesProductParserFunc.Functions
         public string Title { get; set; }
         public string Price { get; set; }
         public string ImageUrl { get; set; }
+        public string ProductUrl { get; set; }
         public string Color { get; set; }
     }
 
@@ -364,6 +365,32 @@ namespace HermesProductParserFunc.Functions
                                     continue;
                                 }
 
+                                string productUrl = null;
+                                try
+                                {
+                                    var productLink = productElement
+                                        .FindElements(By.CssSelector("a[href]"))
+                                        .Select(link => ResolveHermesUrl(link.GetAttribute("href")))
+                                        .FirstOrDefault(link => !string.IsNullOrWhiteSpace(link) && link.Contains("/product/", StringComparison.OrdinalIgnoreCase));
+
+                                    if (string.IsNullOrWhiteSpace(productLink))
+                                    {
+                                        productLink = productElement
+                                            .FindElements(By.CssSelector("a[href]"))
+                                            .Select(link => ResolveHermesUrl(link.GetAttribute("href")))
+                                            .FirstOrDefault(link => !string.IsNullOrWhiteSpace(link));
+                                    }
+
+                                    if (!string.IsNullOrWhiteSpace(productLink))
+                                    {
+                                        productUrl = productLink;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning($"查找商品連結失敗: {ex.Message}");
+                                }
+
                                 string imageUrl = null;
                                 try
                                 {
@@ -417,6 +444,7 @@ namespace HermesProductParserFunc.Functions
                                         Title = title,
                                         Price = price,
                                         ImageUrl = imageUrl,
+                                        ProductUrl = productUrl,
                                         Color = color
                                     });
                                 }
@@ -564,6 +592,30 @@ namespace HermesProductParserFunc.Functions
             {
                 return null;
             }
+        }
+
+        private static string ResolveHermesUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return null;
+            }
+
+            if (Uri.TryCreate(url, UriKind.Absolute, out var absoluteUri))
+            {
+                return absoluteUri.Scheme is "http" or "https"
+                    ? absoluteUri.AbsoluteUri
+                    : null;
+            }
+
+            if (!Uri.TryCreate(new Uri(HermesHomeUrl), url, out var resolvedUri))
+            {
+                return null;
+            }
+
+            return resolvedUri.Scheme is "http" or "https"
+                ? resolvedUri.AbsoluteUri
+                : null;
         }
 
         private static string ResolveChromeBinaryPath()
@@ -1004,41 +1056,50 @@ fetch(window.location.href, { method: 'HEAD', credentials: 'include', cache: 'no
                 for (var batchIndex = 0; batchIndex < productBatches.Length; batchIndex++)
                 {
                     var batch = productBatches[batchIndex];
-                    var bubbles = batch.Select(p => new
+                    var bubbles = batch.Select(p =>
                     {
-                        type = "bubble",
-                        hero = new
+                        var lineTargetUrl = ResolveHermesUrl(p.ProductUrl) ?? HermesUrl;
+                        return new
                         {
-                            type = "image",
-                            size = "full",
-                            aspectRatio = "1:1",
-                            aspectMode = "cover",
-                            url = p.ImageUrl
-                        },
-                        body = new
-                        {
-                            type = "box",
-                            layout = "vertical",
-                            spacing = "md",
-                            contents = new object[]
+                            type = "bubble",
+                            hero = new
                             {
-                                new
+                                type = "image",
+                                size = "full",
+                                aspectRatio = "1:1",
+                                aspectMode = "cover",
+                                url = p.ImageUrl,
+                                action = new
                                 {
-                                    type = "text",
-                                    text = p.Title,
-                                    weight = "bold",
-                                    wrap = true,
-                                    size = "sm"
-                                },
-                                new
+                                    type = "uri",
+                                    uri = lineTargetUrl
+                                }
+                            },
+                            body = new
+                            {
+                                type = "box",
+                                layout = "vertical",
+                                spacing = "md",
+                                contents = new object[]
                                 {
-                                    type = "text",
-                                    text = p.Price,
-                                    color = "#999999",
-                                    size = "xs"
+                                    new
+                                    {
+                                        type = "text",
+                                        text = p.Title,
+                                        weight = "bold",
+                                        wrap = true,
+                                        size = "sm"
+                                    },
+                                    new
+                                    {
+                                        type = "text",
+                                        text = p.Price,
+                                        color = "#999999",
+                                        size = "xs"
+                                    }
                                 }
                             }
-                        }
+                        };
                     }).ToList();
 
                     var payload = new
