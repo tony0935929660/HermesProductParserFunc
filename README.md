@@ -25,8 +25,9 @@
 
 ## Selenium 相關
 - 已在 `HermesTimer.cs` 設定 `ChromeOptions` headless。
-- Windows 本機需安裝 Chrome，且 `Selenium.Chrome.WebDriver` 會安裝對應 chromedriver。
-- 若出現 driver 版本不符，請更新 Chrome 或 driver 套件版本。
+- Windows 本機需安裝 Chrome。
+- Docker image 建置時會一併安裝與 Chrome major version 對應的 `chromedriver`，避免 runtime 依賴 Selenium Manager 臨時下載 driver。
+- 若本機執行出現 driver 版本不符，請更新本機 Chrome 或改用 Docker 執行。
 
 ## 範例輸出
 - 會在 console log 顯示：
@@ -71,7 +72,7 @@
    ```
 
 ## Docker 部署
-- 這個專案可用自訂容器部署到 Linux VM。Dockerfile 已包含 .NET 8 runtime、Google Chrome 與 Selenium 執行所需 Linux 相依套件。
+- 這個專案可用自訂容器部署到 Linux VM。Dockerfile 已包含 .NET 8 runtime、Google Chrome、相容版本的 `chromedriver`，以及 Selenium 執行所需 Linux 相依套件。
 - 建置映像：
    ```bash
    docker build -t hermes-product-parser .

@@ -120,9 +120,14 @@ namespace HermesProductParserFunc.Functions
                     options.BinaryLocation = chromePath;
                 }
 
-                var service = ChromeDriverService.CreateDefaultService();
+                var chromeDriverPath = ResolveChromeDriverPath();
+                var service = !string.IsNullOrWhiteSpace(chromeDriverPath)
+                    ? ChromeDriverService.CreateDefaultService(Path.GetDirectoryName(chromeDriverPath), Path.GetFileName(chromeDriverPath))
+                    : ChromeDriverService.CreateDefaultService();
                 service.SuppressInitialDiagnosticInformation = true;
                 service.HideCommandPromptWindow = true;
+
+                _logger.LogInformation("ChromeDriver binary: {chromeDriverBinary}", string.IsNullOrWhiteSpace(chromeDriverPath) ? "<default>" : chromeDriverPath);
 
                 runRecord.RuntimeInfo = new RuntimeInfoRecord
                 {
@@ -638,6 +643,24 @@ namespace HermesProductParserFunc.Functions
                 "/usr/bin/google-chrome-stable",
                 "/usr/bin/chromium",
                 "/usr/bin/chromium-browser"
+            };
+
+            return candidatePaths.FirstOrDefault(System.IO.File.Exists);
+        }
+
+        private static string ResolveChromeDriverPath()
+        {
+            var configuredChromeDriverPath = Environment.GetEnvironmentVariable("CHROMEDRIVER_PATH");
+            if (!string.IsNullOrWhiteSpace(configuredChromeDriverPath) && System.IO.File.Exists(configuredChromeDriverPath))
+            {
+                return configuredChromeDriverPath;
+            }
+
+            var candidatePaths = new[]
+            {
+                "/usr/local/bin/chromedriver",
+                "/usr/bin/chromedriver",
+                "C:\\chromedriver-win64\\chromedriver.exe"
             };
 
             return candidatePaths.FirstOrDefault(System.IO.File.Exists);
