@@ -80,13 +80,9 @@ namespace HermesProductParserFunc.Functions
 
             _logger.LogInformation("Repository mode: {repositoryMode}", repositoryMode);
 
-            bool needInitDb = Environment.GetEnvironmentVariable("INIT_DB") == "1";
             try
             {
-                if (needInitDb)
-                {
-                    repo.InitDb();
-                }
+                repo.InitDb();
 
                 _logger.LogInformation("Hermes worker cycle started at: {runStartedAtUtc}", runStartedAtUtc);
 
@@ -432,7 +428,7 @@ namespace HermesProductParserFunc.Functions
                                     string id = null;
                                     try
                                     {
-                                        id = ExtractProductId(imageUrl, title, price, color);
+                                        id = ExtractProductId(productUrl, imageUrl, title, price, color);
                                         if (id.StartsWith("fallback-", StringComparison.Ordinal))
                                         {
                                             _logger.LogWarning("id parse fallback used for imageUrl: {imageUrl}", imageUrl);
@@ -472,11 +468,11 @@ namespace HermesProductParserFunc.Functions
                             {
                                 var oldList = repo.GetAllProducts();
                                 var newProducts = products
-                                    .Where(n => !oldList.Any(o => o.Title == n.Title && o.Id == n.Id && o.Color == n.Color))
+                                    .Where(n => !oldList.Any(o => SameProductIdentity(o, n)))
                                     .ToList();
 
                                 var deletedProducts = oldList
-                                    .Where(o => !products.Any(n => n.Title == o.Title && n.Id == o.Id && n.Color == o.Color))
+                                    .Where(o => !products.Any(n => SameProductIdentity(o, n)))
                                     .ToList();
 
                                 runRecord.NewProductsCount = newProducts.Count;
@@ -968,8 +964,17 @@ fetch(window.location.href, { method: 'HEAD', credentials: 'include', cache: 'no
             return Regex.Replace(DefaultUserAgent, @"Chrome/[\d.]+", $"Chrome/{browserVersion}");
         }
 
-        private static string ExtractProductId(string imageUrl, string title, string price, string color)
+        private static string ExtractProductId(string productUrl, string imageUrl, string title, string price, string color)
         {
+            if (!string.IsNullOrWhiteSpace(productUrl))
+            {
+                var match = Regex.Match(productUrl, @"/product/[^/]+-H?([A-Z0-9]+)/?", RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    return match.Groups[1].Value.ToUpperInvariant();
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(imageUrl))
             {
                 var match = Regex.Match(imageUrl, @"hermesproduct/([^/?]+)", RegexOptions.IgnoreCase);
@@ -993,6 +998,18 @@ fetch(window.location.href, { method: 'HEAD', credentials: 'include', cache: 'no
             });
             var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(fallbackSource));
             return $"fallback-{Convert.ToHexString(hashBytes).ToLowerInvariant()[..16]}";
+        }
+
+        private static bool SameProductIdentity(Product left, Product right)
+        {
+            if (!string.IsNullOrWhiteSpace(left?.Id) && !string.IsNullOrWhiteSpace(right?.Id))
+            {
+                return string.Equals(left.Id, right.Id, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(left?.Title, right?.Title, StringComparison.Ordinal)
+                && string.Equals(left?.Price, right?.Price, StringComparison.Ordinal)
+                && string.Equals(left?.Color ?? string.Empty, right?.Color ?? string.Empty, StringComparison.Ordinal);
         }
 
         private static List<string> CollectBlockSignals(IWebDriver driver, string pageSource, string bodyText)

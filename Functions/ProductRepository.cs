@@ -9,7 +9,7 @@ namespace HermesProductParserFunc.Functions
     public interface IProductRepository
     {
         void InitDb();
-        bool ProductExists(string title, string price, string color);
+        bool ProductExists(string id);
         void InsertProduct(Product p);
         List<Product> GetAllProducts();
         void ClearAllProducts();
@@ -56,11 +56,12 @@ namespace HermesProductParserFunc.Functions
                     Title TEXT NOT NULL,
                     Price TEXT NOT NULL,
                     ImageUrl TEXT,
-                    Color TEXT,
-                    UNIQUE(Title, Price, Color)
+                    Color TEXT
                 );
             ";
             cmd.ExecuteNonQuery();
+
+            EnsureSqliteSchema(conn);
         }
         public void ClearAllProducts()
         {
@@ -70,15 +71,18 @@ namespace HermesProductParserFunc.Functions
             cmd.CommandText = "DELETE FROM Product";
             cmd.ExecuteNonQuery();
         }
-        public bool ProductExists(string title, string price, string color)
+        public bool ProductExists(string id)
         {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
             using var conn = new SqliteConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM Product WHERE Title = $title AND Price = $price AND Color = $color";
-            cmd.Parameters.AddWithValue("$title", title);
-            cmd.Parameters.AddWithValue("$price", price);
-            cmd.Parameters.AddWithValue("$color", color ?? "");
+            cmd.CommandText = "SELECT COUNT(*) FROM Product WHERE Id = $id";
+            cmd.Parameters.AddWithValue("$id", id);
             return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
         }
         public void InsertAllProducts(List<Product> products)
@@ -106,7 +110,8 @@ namespace HermesProductParserFunc.Functions
             using var conn = new SqliteConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
-            cmd.CommandText = "INSERT OR IGNORE INTO Product (Title, Price, ImageUrl, Color) VALUES ($title, $price, $img, $color)";
+            cmd.CommandText = "INSERT OR IGNORE INTO Product (Id, Title, Price, ImageUrl, Color) VALUES ($id, $title, $price, $img, $color)";
+            cmd.Parameters.AddWithValue("$id", p.Id);
             cmd.Parameters.AddWithValue("$title", p.Title);
             cmd.Parameters.AddWithValue("$price", p.Price);
             cmd.Parameters.AddWithValue("$img", p.ImageUrl ?? "");
@@ -134,6 +139,61 @@ namespace HermesProductParserFunc.Functions
             }
             return list;
         }
+
+        private static void EnsureSqliteSchema(SqliteConnection conn)
+        {
+            var schemaCommand = conn.CreateCommand();
+            schemaCommand.CommandText = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'Product'";
+            var schemaSql = schemaCommand.ExecuteScalar()?.ToString() ?? string.Empty;
+            if (!schemaSql.Contains("UNIQUE(Title, Price, Color)", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            using var transaction = conn.BeginTransaction();
+
+            var renameCommand = conn.CreateCommand();
+            renameCommand.Transaction = transaction;
+            renameCommand.CommandText = "ALTER TABLE Product RENAME TO Product_Legacy";
+            renameCommand.ExecuteNonQuery();
+
+            var createCommand = conn.CreateCommand();
+            createCommand.Transaction = transaction;
+            createCommand.CommandText = @"
+                CREATE TABLE Product (
+                    Id TEXT PRIMARY KEY,
+                    Title TEXT NOT NULL,
+                    Price TEXT NOT NULL,
+                    ImageUrl TEXT,
+                    Color TEXT
+                );
+            ";
+            createCommand.ExecuteNonQuery();
+
+            var copyCommand = conn.CreateCommand();
+            copyCommand.Transaction = transaction;
+            copyCommand.CommandText = @"
+                INSERT OR IGNORE INTO Product (Id, Title, Price, ImageUrl, Color)
+                SELECT
+                    CASE
+                        WHEN IFNULL(Id, '') = '' THEN lower(hex(randomblob(16)))
+                        ELSE Id
+                    END,
+                    Title,
+                    Price,
+                    ImageUrl,
+                    Color
+                FROM Product_Legacy
+            ";
+            copyCommand.ExecuteNonQuery();
+
+            var dropCommand = conn.CreateCommand();
+            dropCommand.Transaction = transaction;
+            dropCommand.CommandText = "DROP TABLE Product_Legacy";
+            dropCommand.ExecuteNonQuery();
+
+            transaction.Commit();
+        }
     }
 
     // Azure SQL 實作
@@ -148,14 +208,20 @@ namespace HermesProductParserFunc.Functions
             var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Product' AND xtype='U')
-                CREATE TABLE Product (
-                    Id NVARCHAR(255) NOT NULL PRIMARY KEY,
-                    Title NVARCHAR(255) NOT NULL,
-                    Price NVARCHAR(255) NOT NULL,
-                    ImageUrl NVARCHAR(1024),
-                    Color NVARCHAR(255),
-                    CONSTRAINT UQ_TitlePriceColor UNIQUE (Title, Price, Color)
-                );
+                BEGIN
+                    CREATE TABLE Product (
+                        Id NVARCHAR(255) NOT NULL PRIMARY KEY,
+                        Title NVARCHAR(255) NOT NULL,
+                        Price NVARCHAR(255) NOT NULL,
+                        ImageUrl NVARCHAR(1024),
+                        Color NVARCHAR(255)
+                    );
+                END;
+
+                IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE [name] = 'UQ_TitlePriceColor' AND [parent_object_id] = OBJECT_ID('Product'))
+                BEGIN
+                    ALTER TABLE Product DROP CONSTRAINT UQ_TitlePriceColor;
+                END;
             ";
             cmd.ExecuteNonQuery();
         }
@@ -167,15 +233,18 @@ namespace HermesProductParserFunc.Functions
             cmd.CommandText = "DELETE FROM Product";
             cmd.ExecuteNonQuery();
         }
-        public bool ProductExists(string title, string price, string color)
+        public bool ProductExists(string id)
         {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
             using var conn = new Microsoft.Data.SqlClient.SqlConnection(_connStr);
             conn.Open();
             var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM Product WHERE Title = @title AND Price = @price AND Color = @color";
-            cmd.Parameters.AddWithValue("@title", title);
-            cmd.Parameters.AddWithValue("@price", price);
-            cmd.Parameters.AddWithValue("@color", color ?? "");
+            cmd.CommandText = "SELECT COUNT(*) FROM Product WHERE Id = @id";
+            cmd.Parameters.AddWithValue("@id", id);
             return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
         }
         public void InsertAllProducts(List<Product> products)
