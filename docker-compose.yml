@@ -15,5 +15,6 @@ services:
       SCRAPE_INTERVAL_SECONDS: ${SCRAPE_INTERVAL_SECONDS:-60}
       SCRAPE_RUN_LOG_DIR: /home/data/scrape-runs
       SQLITE_DB_PATH: ${SQLITE_DB_PATH:-/home/data/hermes.db}
+      PRODUCTS_API_BASE_URL: ${PRODUCTS_API_BASE_URL:-}
     volumes:
       - ${HOST_DATA_DIR:-./data}:/home/data

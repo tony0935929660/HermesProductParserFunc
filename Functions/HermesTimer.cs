@@ -487,14 +487,16 @@ namespace HermesProductParserFunc.Functions
                                     _logger.LogInformation($"成功更新資料庫，共 {products.Count} 個商品");
                                 }
 
-                                if (newProducts.Count > 0)
-                                {
-                                    runRecord.BroadcastCount = await BroadcastLineMessageAsync(newProducts);
-                                }
-                                else
-                                {
-                                    _logger.LogInformation("LINE broadcast skipped: no new products in this cycle.");
-                                }
+                                // if (newProducts.Count > 0)
+                                // {
+                                //     runRecord.BroadcastCount = await BroadcastLineMessageAsync(newProducts);
+                                // }
+                                // else
+                                // {
+                                //     _logger.LogInformation("LINE broadcast skipped: no new products in this cycle.");
+                                // }
+
+                                await SyncProductsAsync(products, cancellationToken);
 
                                 runRecord.Outcome = "Success";
                                 runRecord.Message = newProducts.Count > 0 || deletedProducts.Count > 0
@@ -1074,6 +1076,58 @@ fetch(window.location.href, { method: 'HEAD', credentials: 'include', cache: 'no
                 || normalized.Contains("blocked")
                 || normalized.Contains("request unsuccessful")
                 || normalized.Contains("temporary unavailable");
+        }
+
+        private async Task SyncProductsAsync(List<Product> products, CancellationToken cancellationToken)
+        {
+            var baseUrl = Environment.GetEnvironmentVariable("PRODUCTS_API_BASE_URL");
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                _logger.LogWarning("環境變數 PRODUCTS_API_BASE_URL 未設定，無法同步商品至外部 API。");
+                return;
+            }
+
+            try
+            {
+                // 開發環境下 localhost 使用自簽憑證，略過憑證驗證
+                using var handler = new HttpClientHandler();
+                if (baseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
+                    baseUrl.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                    baseUrl.Contains("host.docker.internal", StringComparison.OrdinalIgnoreCase))
+                {
+                    handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                }
+
+                using var client = new HttpClient(handler);
+                var payload = new
+                {
+                    products = products.Select(p => new
+                    {
+                        productId = p.Id,
+                        title = p.Title,
+                        price = ParsePrice(p.Price),
+                        imageUrl = p.ImageUrl,
+                        color = p.Color
+                    }).ToList()
+                };
+
+                var syncUrl = $"{baseUrl.TrimEnd('/')}/api/products/sync";
+                var response = await client.PostAsJsonAsync(syncUrl, payload, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                _logger.LogInformation("成功同步 {count} 個商品至 {syncUrl}", products.Count, syncUrl);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "同步商品至外部 API 失敗");
+            }
+        }
+
+        private static decimal ParsePrice(string priceText)
+        {
+            if (string.IsNullOrWhiteSpace(priceText))
+                return 0m;
+            var digits = Regex.Replace(priceText, @"[^\d]", "");
+            return long.TryParse(digits, out var result) ? result : 0m;
         }
 
         private async Task<int> BroadcastLineMessageAsync(List<Product> products)
