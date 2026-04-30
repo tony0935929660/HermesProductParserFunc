@@ -1107,6 +1107,7 @@ fetch(window.location.href, { method: 'HEAD', credentials: 'include', cache: 'no
                         title = p.Title,
                         price = ParsePrice(p.Price),
                         imageUrl = p.ImageUrl,
+                        productUrl = p.ProductUrl,
                         color = p.Color
                     }).ToList()
                 };
