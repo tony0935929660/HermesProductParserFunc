@@ -1114,8 +1114,13 @@ fetch(window.location.href, { method: 'HEAD', credentials: 'include', cache: 'no
 
                 var syncUrl = $"{baseUrl.TrimEnd('/')}/api/products/sync";
                 var response = await client.PostAsJsonAsync(syncUrl, payload, cancellationToken);
-                response.EnsureSuccessStatusCode();
-                _logger.LogInformation("成功同步 {count} 個商品至 {syncUrl}", products.Count, syncUrl);
+                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("同步商品至外部 API 失敗 (status={status}, url={syncUrl}): {responseBody}", (int)response.StatusCode, syncUrl, responseBody);
+                    response.EnsureSuccessStatusCode();
+                }
+                _logger.LogInformation("成功同步 {count} 個商品至 {syncUrl}: {responseBody}", products.Count, syncUrl, responseBody);
             }
             catch (Exception ex)
             {
